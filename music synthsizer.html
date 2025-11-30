@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synth Step Sequencer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        inter: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'synth-primary': '#4f46e5', // Indigo
+                        'synth-secondary': '#6366f1', // Indigo-500
+                        'synth-dark': '#1a202c', // Dark gray for background
+                        'synth-light': '#cbd5e0', // Light gray for text
+                        'grid-on': '#34d399', // Green for active steps
+                        'grid-off': '#4a5568', // Darker gray for inactive steps
+                        'knob-accent': '#facc15', // Yellow for knobs
+                        'sharp-note-bg': '#374151', // Darker background for sharp notes
+                        'wake-lock-active': '#facc15', // Yellow for active wake lock
+                        'wake-lock-inactive': '#9ca3af', // Gray for inactive wake lock
+                        'save-load-btn': '#10b981', // Emerald green for save/load
+                        'save-load-btn-hover': '#059669',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* synth-dark */
+            color: #cbd5e0; /* synth-light */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+            box-sizing: border-box;
+            overflow-y: auto; /* Allow scrolling on smaller screens if grid is tall */
+        }
+
+        /* Custom range slider styling for knobs */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #4a5568; /* grid-off */
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+            border-radius: 4px;
+        }
+
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #facc15; /* knob-accent */
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #facc15; /* knob-accent */
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+
+        .grid-cell {
+            width: calc(100% / 16); /* 16 steps */
+            padding-bottom: calc(100% / 16); /* Create square cells */
+            position: relative;
+            cursor: pointer;
+            border-radius: 0.25rem; /* rounded-sm */
+            transition: background-color 0.1s ease-in-out;
+            border: 1px solid rgba(255, 255, 255, 0.05); /* subtle cell borders */
+        }
+
+        .grid-cell > div {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .grid-row-label {
+            width: 4rem; /* Fixed width for note labels */
+            text-align: right;
+            padding-right: 0.5rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="font-inter">
+    <div class="container mx-auto p-4 md:p-8 bg-gray-800 rounded-xl shadow-lg max-w-4xl w-full">
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-white">Synth Step Sequencer</h1>
+
+        <!-- Controls Section -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4 mb-8 p-4 bg-gray-700 rounded-lg shadow-md">
+            <div class="flex items-center gap-4 w-full md:w-auto">
+                <button id="playBtn" class="bg-synth-primary hover:bg-synth-secondary text-white font-bold py-3 px-6 rounded-lg shadow-md transition-colors duration-200">
+                    <svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                    Play
+                </button>
+                <button id="stopBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-colors duration-200">
+                    <svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7V5h4v2H8zm-1 3H5v2h2v-2zm7 0h-2v2h2v-2z" clip-rule="evenodd"></path></svg>
+                    Stop
+                </button>
+                <div id="wakeLockStatus" class="flex items-center gap-2 text-sm text-gray-400">
+                    <div class="w-3 h-3 rounded-full bg-wake-lock-inactive" id="wakeLockIndicator"></div>
+                    <span>Wake Lock</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2 w-full md:w-auto">
+                <label for="bpmSlider" class="text-sm font-medium text-gray-300">BPM: <span id="bpmValue">120</span></label>
+                <input type="range" id="bpmSlider" min="60" max="240" value="120" class="w-full">
+            </div>
+
+            <div class="flex flex-col gap-2 w-full md:w-auto">
+                <label for="volumeSlider" class="text-sm font-medium text-gray-300">Volume: <span id="volumeValue">0</span> dB</label>
+                <input type="range" id="volumeSlider" min="-40" max="0" value="-10" class="w-full">
+            </div>
+
+            <div class="flex flex-col gap-2 w-full md:w-auto">
+                <label for="cutoffSlider" class="text-sm font-medium text-gray-300">Cutoff: <span id="cutoffValue">2000</span> Hz</label>
+                <input type="range" id="cutoffSlider" min="100" max="10000" value="2000" class="w-full">
+            </div>
+
+            <div class="flex items-center gap-2 w-full md:w-auto">
+                <input type="checkbox" id="reverbToggle" class="form-checkbox h-5 w-5 text-synth-primary rounded focus:ring-0">
+                <label for="reverbToggle" class="text-sm font-medium text-gray-300">Reverb</label>
+            </div>
+
+            <!-- Save/Load Buttons -->
+            <div class="flex items-center gap-4 w-full md:w-auto mt-4 md:mt-0">
+                <button id="saveBtn" class="bg-save-load-btn hover:bg-save-load-btn-hover text-white font-bold py-3 px-6 rounded-lg shadow-md transition-colors duration-200">
+                    <svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V4a1 1 0 112 0v6.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                    Save
+                </button>
+                <button id="loadBtn" class="bg-save-load-btn hover:bg-save-load-btn-hover text-white font-bold py-3 px-6 rounded-lg shadow-md transition-colors duration-200">
+                    <svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V12a1 1 0 11-2 0V5.414L6.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+                    Load
+                </button>
+                <input type="file" id="uploadFile" accept=".json" class="hidden">
+            </div>
+        </div>
+
+        <!-- Sequencer Grid -->
+        <div id="sequencerGrid" class="flex flex-col gap-1.5 p-4 bg-gray-700 rounded-lg shadow-md overflow-x-auto">
+            <!-- Grid rows will be dynamically generated here by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Tone.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <script>
+        // Ensure Tone.js is ready before starting audio context
+        let audioContextStarted = false;
+        document.documentElement.addEventListener('mousedown', () => {
+            if (!audioContextStarted) {
+                Tone.start();
+                audioContextStarted = true;
+                console.log('AudioContext started');
+            }
+        });
+        document.documentElement.addEventListener('touchstart', () => {
+            if (!audioContextStarted) {
+                Tone.start();
+                audioContextStarted = true;
+                console.log('AudioContext started');
+            }
+        });
+
+
+        // --- Tone.js Setup ---
+        // 1. Effects: Filter and Reverb
+        const filter = new Tone.Filter(2000, 'lowpass');
+        const reverb = new Tone.Reverb({
+            decay: 2,
+            preDelay: 0.01,
+            wet: 0.5 // Default wetness
+        });
+
+        // 2. Single PolySynth instance
+        const synth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'sawtooth' }, // Classic synth wave
+            envelope: { attack: 0.01, decay: 0.4, sustain: 0.2, release: 0.8 }
+        });
+
+        // Connect synth output to filter, then filter to reverb, then reverb to master output
+        synth.chain(filter, reverb, Tone.Destination);
+
+
+        // --- Sequencer Grid Data ---
+        // Define the musical notes for each row (expanded range)
+        // From C5 down to C3, including sharps
+        const notes = [
+            "C5", "B4", "A#4", "A4", "G#4", "G4", "F#4", "F4", "E4", "D#4", "D4", "C#4",
+            "C4", "B3", "A#3", "A3", "G#3", "G3", "F#3", "F3", "E3", "D#3", "D3", "C#3", "C3"
+        ];
+        const numSteps = 16; // 16 steps in the sequence
+
+        // Initialize the grid state: an array of arrays (rows x steps), all false (off)
+        let gridState = notes.map(() => Array(numSteps).fill(false)); // Use 'let' for gridState as it will be reassigned
+
+        // --- UI Elements ---
+        const sequencerGridEl = document.getElementById('sequencerGrid');
+        const playBtn = document.getElementById('playBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const bpmSlider = document.getElementById('bpmSlider');
+        const bpmValueEl = document.getElementById('bpmValue');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValueEl = document.getElementById('volumeValue');
+        const cutoffSlider = document.getElementById('cutoffSlider');
+        const cutoffValueEl = document.getElementById('cutoffValue');
+        const reverbToggle = document.getElementById('reverbToggle');
+        const wakeLockIndicator = document.getElementById('wakeLockIndicator');
+        const saveBtn = document.getElementById('saveBtn');
+        const loadBtn = document.getElementById('loadBtn');
+        const uploadFile = document.getElementById('uploadFile');
+
+        // --- Global Sequencer State ---
+        let currentStep = -1; // -1 means no step is active yet
+        let sequence; // Will hold the Tone.Sequence instance
+        let wakeLock = null; // To store the wake lock sentinel
+
+
+        // --- Functions ---
+
+        /**
+         * Attempts to request a screen wake lock.
+         */
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLockIndicator.classList.remove('bg-wake-lock-inactive');
+                    wakeLockIndicator.classList.add('bg-wake-lock-active');
+                    console.log('Wake Lock active!');
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Wake Lock released!');
+                        wakeLockIndicator.classList.remove('bg-wake-lock-active');
+                        wakeLockIndicator.classList.add('bg-wake-lock-inactive');
+                    });
+                } catch (err) {
+                    console.error(`${err.name}, ${err.message}`);
+                    wakeLockIndicator.classList.remove('bg-wake-lock-active');
+                    wakeLockIndicator.classList.add('bg-wake-lock-inactive');
+                }
+            } else {
+                console.warn('Wake Lock API not supported by this browser.');
+            }
+        }
+
+        /**
+         * Releases the screen wake lock.
+         */
+        function releaseWakeLock() {
+            if (wakeLock) {
+                wakeLock.release();
+                wakeLock = null;
+                // The 'release' event listener will handle updating the UI
+            }
+        }
+
+        /**
+         * Initializes or updates the sequencer grid UI based on the current gridState.
+         */
+        function renderGrid() {
+            sequencerGridEl.innerHTML = ''; // Clear existing grid
+
+            notes.forEach((note, rowIndex) => {
+                const rowEl = document.createElement('div');
+                const isSharp = note.includes('#');
+                rowEl.className = `flex items-center gap-1.5 mb-1 ${isSharp ? 'bg-sharp-note-bg rounded-sm' : ''}`; // Use specific sharp note background
+
+                const noteLabel = document.createElement('div');
+                noteLabel.className = 'grid-row-label text-gray-300';
+                noteLabel.textContent = note;
+                rowEl.appendChild(noteLabel);
+
+                const stepsContainer = document.createElement('div');
+                stepsContainer.className = 'flex flex-grow justify-between';
+                rowEl.appendChild(stepsContainer);
+
+                for (let stepIndex = 0; stepIndex < numSteps; stepIndex++) {
+                    const cell = document.createElement('div');
+                    // Determine initial background based on gridState
+                    const isActive = gridState[rowIndex][stepIndex];
+                    cell.className = `grid-cell ${isActive ? 'bg-grid-on' : 'bg-grid-off'} ${stepIndex % 4 === 0 && stepIndex !== 0 ? 'ml-0.5' : ''}`;
+                    cell.dataset.rowIndex = rowIndex;
+                    cell.dataset.stepIndex = stepIndex;
+                    cell.innerHTML = '<div></div>';
+                    stepsContainer.appendChild(cell);
+
+                    cell.addEventListener('click', () => {
+                        gridState[rowIndex][stepIndex] = !gridState[rowIndex][stepIndex];
+                        cell.classList.toggle('bg-grid-on', gridState[rowIndex][stepIndex]);
+                        cell.classList.toggle('bg-grid-off', !gridState[rowIndex][stepIndex]);
+                    });
+                }
+                sequencerGridEl.appendChild(rowEl);
+            });
+        }
+
+
+        /**
+         * Creates and starts the Tone.js sequence.
+         */
+        function createAndStartSequence() {
+            if (sequence) {
+                sequence.dispose(); // Dispose previous sequence if exists
+            }
+
+            // Create a Tone.Sequence that iterates through each step
+            // The callback function fires on each subdivision of the transport
+            sequence = new Tone.Sequence((time, stepIndex) => {
+                // Clear active step highlight from previous step
+                const prevStepCells = document.querySelectorAll(`[data-step-index="${currentStep}"]`);
+                prevStepCells.forEach(cell => cell.classList.remove('ring-2', 'ring-synth-secondary'));
+
+                // Update current step and highlight
+                currentStep = stepIndex;
+                const currentStepCells = document.querySelectorAll(`[data-step-index="${currentStep}"]`);
+                currentStepCells.forEach(cell => cell.classList.add('ring-2', 'ring-synth-secondary'));
+
+                // Play notes based on the grid state for the current step
+                notes.forEach((note, rowIndex) => {
+                    if (gridState[rowIndex][stepIndex]) {
+                        // Use the single synth instance to trigger notes
+                        synth.triggerAttackRelease(note, "8n", time); // Play note for an 8th note duration
+                    }
+                });
+            }, Array.from({ length: numSteps }, (_, i) => i), "16n").start(0); // Trigger every 16th note, starting at 0
+
+            Tone.Transport.start(); // Start Tone.js transport
+            requestWakeLock(); // Request wake lock when playback starts
+
+            // Update Play button to Pause state
+            playBtn.textContent = 'Pause';
+            playBtn.innerHTML = `<svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 8H7v4h2V8zm4 0h-2v4h2V8z" clip-rule="evenodd"></path></svg>Pause`;
+            playBtn.classList.remove('bg-synth-primary');
+            playBtn.classList.add('bg-orange-500');
+        }
+
+        /**
+         * Stops the Tone.js transport and sequence.
+         */
+        function stopSequence() {
+            Tone.Transport.stop(); // Stop Tone.js transport
+            if (sequence) {
+                sequence.stop();
+                sequence.dispose(); // Clean up the sequence
+                sequence = null;
+            }
+            // Clear all active step highlights
+            const allCells = document.querySelectorAll('.grid-cell');
+            allCells.forEach(cell => cell.classList.remove('ring-2', 'ring-synth-secondary'));
+            currentStep = -1; // Reset current step
+
+            releaseWakeLock(); // Release wake lock when playback stops
+
+            // Update Play button to Play state
+            playBtn.textContent = 'Play';
+            playBtn.innerHTML = `<svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play`;
+            playBtn.classList.remove('bg-orange-500');
+            playBtn.classList.add('bg-synth-primary');
+        }
+
+        /**
+         * Saves the current grid state to a JSON file.
+         */
+        function saveSequence() {
+            // Stop playback before saving to ensure a stable state
+            stopSequence();
+
+            const dataStr = JSON.stringify(gridState);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `synth_sequence_${new Date().toISOString().slice(0,10)}.json`; // e.g., synth_sequence_2025-06-29.json
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log('Sequence saved.');
+            alert('Sequence saved successfully!');
+        }
+
+        /**
+         * Loads a grid state from a JSON file.
+         * @param {File} file - The file to load.
+         */
+        function loadSequence(file) {
+            // Stop playback before loading a new sequence
+            stopSequence();
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const loadedData = JSON.parse(e.target.result);
+                    // Basic validation: Check if it's an array of arrays and correct dimensions
+                    if (Array.isArray(loadedData) && loadedData.length === notes.length &&
+                        loadedData.every(row => Array.isArray(row) && row.length === numSteps)) {
+                        gridState = loadedData; // Update the global gridState
+                        renderGrid(); // Re-render the UI with the loaded data
+                        console.log('Sequence loaded successfully.');
+                        alert('Sequence loaded successfully!');
+                    } else {
+                        alert('Invalid sequence file format. Please upload a valid .json sequence file with correct dimensions.');
+                        console.error('Invalid sequence file format.', loadedData);
+                    }
+                } catch (error) {
+                    alert('Error parsing sequence file. Make sure it is a valid JSON file.');
+                    console.error('Error parsing JSON:', error);
+                }
+            };
+            reader.onerror = (e) => {
+                console.error('File reading error:', e);
+                alert('Could not read the file.');
+            };
+            reader.readAsText(file); // Read the file as text
+        }
+
+
+        // --- Event Listeners ---
+
+        playBtn.addEventListener('click', () => {
+            if (Tone.Transport.state === 'started') {
+                Tone.Transport.pause();
+                releaseWakeLock(); // Release wake lock when paused
+                // Reset Play button to Play state
+                playBtn.textContent = 'Play';
+                playBtn.innerHTML = `<svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play`;
+                playBtn.classList.remove('bg-orange-500');
+                playBtn.classList.add('bg-synth-primary');
+            } else {
+                createAndStartSequence();
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            stopSequence();
+        });
+
+        bpmSlider.addEventListener('input', (e) => {
+            Tone.Transport.bpm.value = parseFloat(e.target.value); // Ensure float value
+            bpmValueEl.textContent = e.target.value;
+        });
+
+        volumeSlider.addEventListener('input', (e) => {
+            synth.volume.value = parseFloat(e.target.value);
+            volumeValueEl.textContent = e.target.value;
+        });
+
+        cutoffSlider.addEventListener('input', (e) => {
+            filter.frequency.value = parseFloat(e.target.value);
+            cutoffValueEl.textContent = e.target.value;
+        });
+
+        reverbToggle.addEventListener('change', (e) => {
+            reverb.wet.value = e.target.checked ? 0.5 : 0;
+        });
+
+        saveBtn.addEventListener('click', saveSequence);
+
+        loadBtn.addEventListener('click', () => {
+            uploadFile.click(); // Trigger click on hidden file input
+        });
+
+        uploadFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                loadSequence(file);
+            }
+            // Clear the file input to allow loading the same file again if needed
+            e.target.value = '';
+        });
+
+
+        // Re-acquire wake lock if page becomes visible again and audio is playing
+        document.addEventListener('visibilitychange', () => {
+            if (wakeLock !== null && document.visibilityState === 'visible' && Tone.Transport.state === 'started') {
+                requestWakeLock();
+            }
+        });
+
+
+        // --- Initial Setup ---
+        renderGrid(); // Draw the grid initially
+
+        // Set initial slider values and labels based on Tone.js defaults or desired starting points
+        bpmSlider.value = Tone.Transport.bpm.value;
+        bpmValueEl.textContent = Tone.Transport.bpm.value;
+
+        // Note: For volume, Tone.js sets it in dB. The default is 0dB, but your slider default is -10.
+        // It's good to initialize the synth volume to match the slider's initial value.
+        synth.volume.value = parseFloat(volumeSlider.value);
+        volumeValueEl.textContent = volumeSlider.value;
+
+        filter.frequency.value = parseFloat(cutoffSlider.value);
+        cutoffValueEl.textContent = cutoffSlider.value;
+        
+        reverb.wet.value = reverbToggle.checked ? 0.5 : 0; // Initialize reverb based on checkbox state
+    </script>
+</body>
+</html>
